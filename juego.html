@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arrastra y Ordena — Ordenamiento por Inserción</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', sans-serif; touch-action: manipulation; }
+  .card {
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    cursor: grab;
+  }
+  .card:active { cursor: grabbing; }
+  .card.dragging {
+    opacity: 0.35;
+    transform: scale(0.95);
+  }
+  .card.locked { cursor: default; }
+  .ghost {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(1.1) rotate(-3deg);
+    box-shadow: 0 20px 40px rgba(99,102,241,0.6);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    color: white;
+    background: #4f46e5;
+  }
+  .slot {
+    transition: all 0.2s ease;
+    border-radius: 12px;
+  }
+  .slot.drop-hover {
+    background: rgba(16,185,129,0.25);
+    border-color: #10b981 !important;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 3px rgba(16,185,129,0.4);
+  }
+  .slot.drop-correct { animation: pop 0.4s ease; }
+  .slot.drop-wrong { animation: shake 0.4s ease; }
+  @keyframes pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+  }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .pulse-ring {
+    animation: pulseRing 1.5s infinite;
+  }
+  @keyframes pulseRing {
+    0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.7); }
+    50% { box-shadow: 0 0 0 12px rgba(251,191,36,0); }
+  }
+</style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-slate-100 p-4 md:p-6">
+
+  <div class="max-w-5xl mx-auto">
+
+    <!-- Header -->
+    <header class="text-center mb-5">
+      <h1 class="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent mb-1">
+        Arrastra y Ordena
+      </h1>
+      <p class="text-slate-400 text-sm">
+        Ordenamiento por <b class="text-indigo-300">Inserción</b> — arrastra la carta al hueco correcto
+      </p>
+    </header>
+
+    <!-- Stats -->
+    <div class="flex justify-center gap-3 mb-5 flex-wrap">
+      <div class="bg-slate-800/70 border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-2 text-sm">
+        <i data-lucide="trophy" class="w-4 h-4 text-amber-400"></i>
+        <span class="text-slate-400">Puntos</span>
+        <b id="score" class="text-amber-400 text-lg">0</b>
+      </div>
+      <div class="bg-slate-800/70 border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-2 text-sm">
+        <i data-lucide="layers" class="w-4 h-4 text-indigo-400"></i>
+        <span class="text-slate-400">Movimientos</span>
+        <b id="moves" class="text-indigo-400 text-lg">0</b>
+      </div>
+      <button id="reset-btn" class="bg-slate-800/70 hover:bg-slate-700 border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-2 text-sm font-semibold">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Reiniciar
+      </button>
+    </div>
+
+    <!-- Instrucción -->
+    <div class="bg-indigo-500/10 border border-indigo-500/30 rounded-2xl p-3 mb-5 text-sm text-slate-300 flex items-start gap-2">
+      <i data-lucide="hand" class="w-4 h-4 text-indigo-400 shrink-0 mt-0.5"></i>
+      <p><b class="text-white">Arrastra</b> la carta <b class="text-amber-300">amarilla</b> hasta uno de los <b class="text-emerald-300">huecos punteados</b> de la zona verde. Si el orden es correcto, la carta se queda.</p>
+    </div>
+
+    <!-- Zona ordenada -->
+    <div class="mb-5">
+      <div class="flex items-center gap-2 mb-2">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+        <h2 class="text-xs uppercase tracking-wider text-emerald-400 font-bold">Zona ordenada</h2>
+      </div>
+      <div id="sorted-zone" class="flex flex-wrap items-center gap-1 p-4 bg-slate-800/40 border border-emerald-500/30 rounded-2xl min-h-[110px]"></div>
+    </div>
+
+    <!-- Zona desordenada -->
+    <div class="mb-5">
+      <div class="flex items-center gap-2 mb-2">
+        <i data-lucide="shuffle" class="w-4 h-4 text-amber-400"></i>
+        <h2 class="text-xs uppercase tracking-wider text-amber-400 font-bold">Fila por ordenar</h2>
+      </div>
+      <div id="unsorted-zone" class="flex flex-wrap gap-2 p-4 bg-slate-800/40 border border-amber-500/30 rounded-2xl min-h-[110px]"></div>
+    </div>
+
+    <!-- Mensaje -->
+    <div id="message" class="text-center text-sm font-semibold min-h-[24px] mb-3"></div>
+
+    <!-- Modal victoria -->
+    <div id="win-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 hidden items-center justify-center p-4">
+      <div class="bg-slate-800 border border-indigo-500/40 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+        <div class="inline-flex p-4 bg-emerald-500/20 text-emerald-400 rounded-full mb-4">
+          <i data-lucide="party-popper" class="w-10 h-10"></i>
+        </div>
+        <h2 class="text-2xl font-bold mb-2">¡Bien hecho!</h2>
+        <p class="text-slate-400 mb-5 text-sm">Completaste el ordenamiento por inserción.</p>
+        <div class="grid grid-cols-2 gap-3 mb-6 text-sm">
+          <div class="bg-slate-900/60 rounded-xl p-3">
+            <div class="text-slate-400 text-xs">Puntos</div>
+            <div id="final-score" class="text-2xl font-bold text-amber-400">0</div>
+          </div>
+          <div class="bg-slate-900/60 rounded-xl p-3">
+            <div class="text-slate-400 text-xs">Movimientos</div>
+            <div id="final-moves" class="text-2xl font-bold text-indigo-400">0</div>
+          </div>
+        </div>
+        <button id="play-again-btn" class="w-full px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold flex items-center justify-center gap-2">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Jugar de nuevo
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+  lucide.createIcons();
+
+  const TOTAL_CARDS = 6;
+  let sortedCards = [];
+  let unsortedCards = [];
+  let score = 0;
+  let moves = 0;
+
+  const sortedZone = document.getElementById('sorted-zone');
+  const unsortedZone = document.getElementById('unsorted-zone');
+  const messageEl = document.getElementById('message');
+  const scoreEl = document.getElementById('score');
+  const movesEl = document.getElementById('moves');
+  const winModal = document.getElementById('win-modal');
+
+  // ===== Generar cartas =====
+  function generateRandomCards() {
+    const set = new Set();
+    while (set.size < TOTAL_CARDS) set.add(Math.floor(Math.random() * 90) + 10);
+    return [...set];
+  }
+
+  // ===== Render =====
+  function render() {
+    sortedZone.innerHTML = '';
+    // Slot inicial
+    sortedZone.appendChild(makeSlot(0));
+    // Cartas + slots intermedios
+    sortedCards.forEach((value, i) => {
+      const cardEl = document.createElement('div');
+      cardEl.className = 'card locked bg-emerald-600 text-white font-extrabold text-xl w-16 h-24 rounded-xl flex items-center justify-center';
+      cardEl.textContent = value;
+      sortedZone.appendChild(cardEl);
+      sortedZone.appendChild(makeSlot(i + 1));
+    });
+
+    unsortedZone.innerHTML = '';
+    unsortedCards.forEach((value, i) => {
+      const cardEl = document.createElement('div');
+      const isNext = i === 0;
+      cardEl.className = `card bg-indigo-600 text-white font-extrabold text-xl w-16 h-24 rounded-xl flex items-center justify-center ${isNext ? 'pulse-ring cursor-grab' : 'opacity-40 cursor-not-allowed'}`;
+      cardEl.textContent = value;
+      cardEl.dataset.value = value;
+      cardEl.dataset.unsortedIndex = i;
+      cardEl.dataset.draggable = isNext ? 'true' : 'false';
+      if (isNext) attachDrag(cardEl);
+      unsortedZone.appendChild(cardEl);
+    });
+
+    scoreEl.textContent = score;
+    movesEl.textContent = moves;
+    lucide.createIcons();
+  }
+
+  function makeSlot(position) {
+    const slot = document.createElement('div');
+    slot.className = 'slot w-16 h-24 border-2 border-dashed border-slate-500 flex items-center justify-center cursor-pointer';
+    slot.dataset.position = position;
+    slot.innerHTML = '<i data-lucide="plus" class="w-6 h-6 text-slate-500 pointer-events-none"></i>';
+    slot.addEventListener('dragover', onSlotDragOver);
+    slot.addEventListener('dragleave', onSlotDragLeave);
+    slot.addEventListener('drop', (e) => onSlotDrop(e, position));
+    slot.addEventListener('click', () => handleTapInsert(position));
+    return slot;
+  }
+
+  // ===== Drag & Drop (mouse) =====
+  let dragValue = null;
+
+  function attachDrag(el) {
+    el.draggable = true;
+    el.addEventListener('dragstart', (e) => {
+      dragValue = parseInt(el.dataset.value, 10);
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', el.dataset.value);
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      dragValue = null;
+    });
+  }
+
+  function onSlotDragOver(e) {
+    e.preventDefault();
+    e.currentTarget.classList.add('drop-hover');
+  }
+  function onSlotDragLeave(e) {
+    e.currentTarget.classList.remove('drop-hover');
+  }
+  function onSlotDrop(e, position) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drop-hover');
+    if (dragValue === null) return;
+    attemptInsert(dragValue, position, e.currentTarget);
+    dragValue = null;
+  }
+
+  // ===== Touch drag (móvil) =====
+  let touchGhost = null;
+  let touchValue = null;
+  let touchSource = null;
+
+  function attachTouchDrag(el) {
+    el.addEventListener('touchstart', (e) => {
+      if (el.dataset.draggable !== 'true') return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      touchValue = parseInt(el.dataset.value, 10);
+      touchSource = el;
+      el.classList.add('dragging');
+
+      touchGhost = document.createElement('div');
+      touchGhost.className = 'ghost w-16 h-24 text-xl';
+      touchGhost.textContent = touchValue;
+      touchGhost.style.left = touch.clientX + 'px';
+      touchGhost.style.top = touch.clientY + 'px';
+      document.body.appendChild(touchGhost);
+    }, { passive: false });
+
+    el.addEventListener('touchmove', (e) => {
+      if (!touchGhost) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      touchGhost.style.left = touch.clientX + 'px';
+      touchGhost.style.top = touch.clientY + 'px';
+
+      const elBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+      document.querySelectorAll('.slot').forEach(s => s.classList.remove('drop-hover'));
+      if (elBelow && elBelow.classList.contains('slot')) {
+        elBelow.classList.add('drop-hover');
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchend', (e) => {
+      if (!touchGhost) return;
+      const touch = e.changedTouches[0];
+      const elBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+
+      touchGhost.remove();
+      touchGhost = null;
+      el.classList.remove('dragging');
+      document.querySelectorAll('.slot').forEach(s => s.classList.remove('drop-hover'));
+
+      if (elBelow && elBelow.classList.contains('slot')) {
+        const position = parseInt(elBelow.dataset.position, 10);
+        attemptInsert(touchValue, position, elBelow);
+      }
+      touchValue = null;
+      touchSource = null;
+    });
+  }
+
+  // ===== Tap para insertar (fallback accesible) =====
+  function handleTapInsert(position) {
+    // Si no hay drag activo, tomamos la primera carta automáticamente
+    if (unsortedCards.length === 0) return;
+    const value = unsortedCards[0];
+    const slot = document.querySelector(`.slot[data-position="${position}"]`);
+    attemptInsert(value, position, slot);
+  }
+
+  // ===== Lógica de inserción =====
+  function attemptInsert(value, position, slotEl) {
+    const left = position > 0 ? sortedCards[position - 1] : -Infinity;
+    const right = position < sortedCards.length ? sortedCards[position] : Infinity;
+
+    if (value >= left && value <= right) {
+      // Correcto
+      sortedCards.splice(position, 0, value);
+      unsortedCards.shift();
+      score += 10;
+      moves++;
+      showMessage('¡Correcto!', 'emerald');
+      if (slotEl) {
+        slotEl.classList.add('drop-correct');
+        setTimeout(() => slotEl.classList.remove('drop-correct'), 400);
+      }
+      render();
+      checkWin();
+    } else {
+      // Incorrecto
+      moves++;
+      score = Math.max(0, score - 3);
+      showMessage(
+        `${value} debe ir entre ${left === -Infinity ? 'el inicio' : left} y ${right === Infinity ? 'el final' : right}.`,
+        'rose'
+      );
+      if (slotEl) {
+        slotEl.classList.add('drop-wrong');
+        setTimeout(() => slotEl.classList.remove('drop-wrong'), 400);
+      }
+      render();
+    }
+  }
+
+  // ===== Mensajes =====
+  function showMessage(text, color = 'slate') {
+    const colors = {
+      slate: 'text-slate-400',
+      emerald: 'text-emerald-400',
+      rose: 'text-rose-400',
+      indigo: 'text-indigo-400'
+    };
+    messageEl.className = `text-center text-sm font-semibold min-h-[24px] mb-3 fade-in ${colors[color]}`;
+    messageEl.textContent = text;
+  }
+
+  // ===== Victoria =====
+  function checkWin() {
+    if (unsortedCards.length === 0) {
+      document.getElementById('final-score').textContent = score;
+      document.getElementById('final-moves').textContent = moves;
+      winModal.classList.remove('hidden');
+      winModal.classList.add('flex');
+      lucide.createIcons();
+    }
+  }
+
+  // ===== Inicio =====
+  function startGame() {
+    const all = generateRandomCards();
+    sortedCards = [all[0]];
+    unsortedCards = all.slice(1);
+    score = 0;
+    moves = 0;
+    winModal.classList.add('hidden');
+    winModal.classList.remove('flex');
+    showMessage('Arrastra la carta amarilla a un hueco de la zona verde.', 'indigo');
+    render();
+    // Adjuntar touch al primer card recién renderizado
+    const firstCard = unsortedZone.querySelector('.card');
+    if (firstCard) attachTouchDrag(firstCard);
+  }
+
+  document.getElementById('reset-btn').addEventListener('click', startGame);
+  document.getElementById('play-again-btn').addEventListener('click', startGame);
+
+  startGame();
+</script>
+</body>
+</html>
